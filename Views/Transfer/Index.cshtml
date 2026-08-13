@@ -1,0 +1,16 @@
+@model List<WarehouseSlot>
+@{ ViewData["Title"] = "Transfer"; }
+<div class="page-head"><div><div class="eyebrow">OUTBOUND CONTROL</div><h1>Transfer</h1><p>Chọn ô đang có hàng và gửi lệnh xuất kho.</p></div></div>
+<div class="content-card">
+    <div class="card-title-row"><div><h2>Available for outbound</h2><p>Chỉ hiển thị các ô có trạng thái OCCUPIED.</p></div>
+        <form method="get" class="search-box"><input name="search" value="@ViewBag.Search" placeholder="Tìm ô kệ, ví dụ R03..."/><button class="btn btn-dark">Tìm kiếm</button></form>
+    </div>
+    <div class="table-responsive"><table class="table warehouse-table align-middle">
+        <thead><tr><th>Ô kệ</th><th>Vị trí</th><th>Trạng thái</th><th>Cảm biến</th><th></th></tr></thead>
+        <tbody>@foreach(var s in Model){<tr><td><div class="slot-name">@s.Name</div></td><td>Row @s.RowNo · Col @s.ColNo</td><td><span class="status status-occupied">OCCUPIED</span></td><td>@(s.SensorOccupied?"Có pallet":"Không có pallet")</td><td class="text-end"><button class="btn btn-primary" onclick="sendOutbound(@s.Id, '@s.Name')">Gửi đi</button></td></tr>}</tbody>
+    </table></div>
+</div>
+<div id="toastBox" class="toast-box"></div>
+@section Scripts {<script>
+async function sendOutbound(id,name){ if(!confirm(`Gửi lệnh xuất hàng từ ${name}?`))return; const r=await fetch('/Transfer/RequestOutbound',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`slotId=${id}`}).then(x=>x.json()); document.getElementById('toastBox').innerHTML=`<div class="mini-toast ${r.ok?'ok':'bad'}">${r.message}</div>`; if(r.ok)setTimeout(()=>location.reload(),700); }
+</script>}

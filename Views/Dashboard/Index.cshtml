@@ -1,0 +1,53 @@
+@model List<WarehouseSlot>
+@{ ViewData["Title"] = "Dashboard"; }
+
+<div class="page-head">
+    <div><div class="eyebrow">WAREHOUSE OVERVIEW</div><h1>Dashboard</h1><p>Giám sát 8 ô kệ và điều khiển nhập hàng.</p></div>
+    <div class="live-pill"><span></span> Sensor refresh: 30s</div>
+</div>
+
+<div class="summary-grid">
+    <div class="summary-card"><span>Tổng ô kệ</span><strong>8</strong></div>
+    <div class="summary-card"><span>Ô trống</span><strong id="emptyCount">@Model.Count(x => x.Status == "EMPTY")</strong></div>
+    <div class="summary-card"><span>Đang chứa</span><strong id="occupiedCount">@Model.Count(x => x.Status == "OCCUPIED")</strong></div>
+    <div class="summary-card"><span>Đang có lệnh</span><strong id="requestCount">@Model.Count(x => x.Status == "REQUEST")</strong></div>
+</div>
+
+<div class="content-card">
+    <div class="card-title-row"><div><h2>Storage Slots</h2><p>Trạng thái vật lý và lệnh hiện tại của từng ô.</p></div>
+        <div class="d-flex gap-2"><button class="btn btn-primary" onclick="requestInbound()">+ Nhập hàng</button><button class="btn btn-outline-danger" onclick="stopInbound()">Dừng nhập hàng</button></div>
+    </div>
+    <div class="table-responsive">
+        <table class="table warehouse-table align-middle">
+            <thead><tr><th>Ô kệ</th><th>Vị trí</th><th>Trạng thái</th><th>Cảm biến</th><th>Loại lệnh</th><th>Cập nhật cuối</th></tr></thead>
+            <tbody id="slotTableBody">
+            @foreach (var s in Model) {
+                <tr><td><div class="slot-name">@s.Name</div></td><td>Row @s.RowNo · Col @s.ColNo</td><td><span class="status status-@s.Status.ToLower()">@s.Status</span></td><td>@(s.SensorOccupied ? "Có pallet" : "Không có pallet")</td><td>@(s.RequestType ?? "—")</td><td>@(s.LastSensorUpdate?.ToString("dd/MM/yyyy HH:mm:ss") ?? "Chưa có dữ liệu")</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="toastBox" class="toast-box"></div>
+
+@section Scripts {
+<script>
+async function post(url, body) {
+    const response = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : null });
+    return await response.json();
+}
+async function requestInbound(){ const r=await post('/Dashboard/RequestInbound'); showToast(r.message, r.ok); await refreshSlots(); }
+async function stopInbound(){ const r=await post('/Dashboard/StopInbound'); showToast(r.message, r.ok); await refreshSlots(); }
+function showToast(message, ok){ const box=document.getElementById('toastBox'); box.innerHTML=`<div class="mini-toast ${ok?'ok':'bad'}">${message}</div>`; setTimeout(()=>box.innerHTML='',3500); }
+function badge(status){ return `<span class="status status-${status.toLowerCase()}">${status}</span>`; }
+async function refreshSlots(){
+    const data=await fetch('/Dashboard/Slots').then(r=>r.json());
+    document.getElementById('emptyCount').textContent=data.filter(x=>x.status==='EMPTY').length;
+    document.getElementById('occupiedCount').textContent=data.filter(x=>x.status==='OCCUPIED').length;
+    document.getElementById('requestCount').textContent=data.filter(x=>x.status==='REQUEST').length;
+    document.getElementById('slotTableBody').innerHTML=data.map(s=>`<tr><td><div class="slot-name">${s.name}</div></td><td>Row ${s.rowNo} · Col ${s.colNo}</td><td>${badge(s.status)}</td><td>${s.sensorOccupied?'Có pallet':'Không có pallet'}</td><td>${s.requestType??'—'}</td><td>${s.lastSensorUpdate?new Date(s.lastSensorUpdate).toLocaleString('vi-VN'):'Chưa có dữ liệu'}</td></tr>`).join('');
+}
+setInterval(refreshSlots, 30000);
+</script>
+}
