@@ -1,0 +1,51 @@
+# ==============================
+# .NET / ASP.NET Core
+# ==============================
+
+# Build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code local settings
+.vscode/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# Compiled files
+*.dll
+*.exe
+*.pdb
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# NuGet
+*.nupkg
+packages/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local development configuration
+appsettings.Development.json
+.env
+
+# Runtime camera captures
+wwwroot/captures/

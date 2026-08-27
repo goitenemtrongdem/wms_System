@@ -1,0 +1,197 @@
+@model DashboardViewModel
+
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">WAREHOUSE OVERVIEW</div>
+        <h1>Dashboard</h1>
+        <p>Giám sát ô kệ, quét QR và điều khiển luồng nhập hàng.</p>
+    </div>
+    <div class="live-pill"><span></span>Realtime PLC · M202 Camera</div>
+</div>
+
+<div class="summary-grid summary-grid-five">
+    <div class="summary-card"><span>Tổng ô kệ</span><strong>@Model.Slots.Count</strong></div>
+    <div class="summary-card"><span>Ô trống</span><strong id="emptyCount">@Model.Slots.Count(x => x.Status == "EMPTY")</strong></div>
+    <div class="summary-card"><span>Đang chứa</span><strong id="occupiedCount">@Model.Slots.Count(x => x.Status == "OCCUPIED")</strong></div>
+    <div class="summary-card"><span>Đang có lệnh</span><strong id="requestCount">@Model.Slots.Count(x => x.Status == "REQUEST")</strong></div>
+    <div class="summary-card accent-card"><span>Chờ nhập từ QR</span><strong id="readyInboundCount">@Model.ReadyInboundCount</strong></div>
+</div>
+
+<div class="split-grid mb-4">
+    <section class="content-card">
+        <div class="card-title-row mb-2">
+            <div><h2>Hàng đợi QR</h2><p>Camera GigE tự chụp sau @Model.TriggerDelaySeconds giây khi M202 = 1.</p></div>
+        </div>
+        <div class="hardware-chain" id="hardwareChain">
+            <div><span>PLC Modbus</span><strong id="plcStatus">@Model.HardwareStatus.PlcMessage</strong></div>
+            <div><span>M202</span><strong id="m202Status">@(Model.HardwareStatus.M202 is true ? "1" : Model.HardwareStatus.M202 is false ? "0" : "—")</strong></div>
+            <div><span>Camera GigE</span><strong id="cameraStatus">@Model.HardwareStatus.CameraMessage</strong></div>
+            <small id="triggerStatus">@Model.HardwareStatus.TriggerState</small>
+            <button id="testCameraButton" class="btn btn-sm btn-outline-primary hardware-test" type="button" onclick="testCamera()">Chụp thử camera</button>
+        </div>
+        @if (Model.NextInbound?.InfeedItem is { } item)
+        {
+            <div class="pending-item">
+                <div><span>Item sẵn sàng</span><strong>#@item.Id · @item.ItemCode</strong></div>
+                <div><span>@item.ProductName · lô @item.BatchNumber</span><small>@item.Quantity sản phẩm · @(item.WeightKg?.ToString("0.##") ?? "—") kg</small></div>
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">Chưa có QR nào sẵn sàng để nhập.</div>
+        }
+    </section>
+
+    <section class="content-card">
+        <div class="card-title-row mb-2"><div><h2>Quét thủ công</h2><p>Dùng khi nghiệm thu hoặc máy quét cầm tay.</p></div></div>
+        <div class="scan-form">
+            <input id="manualQrValue" placeholder="QR value hoặc ItemCode, ví dụ ASRS-20260818-000001" />
+            <button class="btn btn-outline-primary" onclick="scanManualQr()">Lưu QR</button>
+        </div>
+    </section>
+</div>
+
+<div class="content-card">
+    <div class="card-title-row">
+        <div><h2>Storage Slots</h2><p>`Item ID` chỉ được gán khi cảm biến xác nhận pallet đã nằm trong ô kệ.</p></div>
+        <div class="d-flex gap-2">
+            <button id="infeedMotionTestButton" class="btn btn-primary" type="button" title="Test PLC: 50.000 xung ở 10.000 xung/s" onclick="requestInbound()">+ Nhập hàng</button>
+            <button class="btn btn-outline-danger" onclick="stopInbound()">Dừng nhập hàng</button>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table warehouse-table align-middle">
+            <thead><tr><th>Ô kệ</th><th>Vị trí</th><th>Item ID</th><th>Trạng thái</th><th>Cảm biến</th><th>Loại lệnh</th><th>Cập nhật cuối</th></tr></thead>
+            <tbody id="slotTableBody">
+            @foreach (var s in Model.Slots)
+            {
+                <tr data-slot="@s.Name">
+                    <td><div class="slot-name">@s.Name</div></td>
+                    <td>Row @s.RowNo · Col @s.ColNo</td>
+                    <td class="slot-item">@if (s.StoredItem is not null) { <strong>#@s.StoredItem.Id</strong><br /><small>@s.StoredItem.ItemCode</small> } else { <span>—</span> }</td>
+                    <td><span class="status slot-status status-@s.Status.ToLower()">@s.Status</span></td>
+                    <td class="slot-sensor">@(s.SensorOccupied ? "Có pallet" : "Không có pallet")</td>
+                    <td class="slot-request">@(s.RequestType ?? "—")</td>
+                    <td class="slot-update">@(s.LastSensorUpdate?.ToString("dd/MM/yyyy HH:mm:ss") ?? "Chưa có dữ liệu")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="toastBox" class="toast-box"></div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+<script>
+async function postJson(url, body) {
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : null });
+    return await response.json();
+}
+
+function showToast(message, ok, plcMessage) {
+    const suffix = plcMessage ? `<br><small>${plcMessage}</small>` : '';
+    document.getElementById('toastBox').innerHTML = `<div class="mini-toast ${ok ? 'ok' : 'bad'}">${message}${suffix}</div>`;
+    setTimeout(() => document.getElementById('toastBox').innerHTML = '', 6000);
+}
+
+async function scanManualQr() {
+    const input = document.getElementById('manualQrValue');
+    const r = await postJson('/Dashboard/ScanQr', { qrValue: input.value });
+    showToast(r.message, r.ok, r.plcMessage);
+    if (r.ok) { input.value = ''; setTimeout(() => location.reload(), 600); }
+}
+
+async function requestInbound() {
+    const button = document.getElementById('infeedMotionTestButton');
+    button.disabled = true;
+    button.textContent = 'Đang gửi PLC...';
+    try {
+        const r = await postJson('/Dashboard/RunInfeedMotionTest');
+        showToast(r.message, r.ok, r.plcMessage);
+    } catch {
+        showToast('Không gửi được yêu cầu test PLC.', false);
+    } finally {
+        button.disabled = false;
+        button.textContent = '+ Nhập hàng';
+    }
+}
+
+async function stopInbound() {
+    const r = await postJson('/Dashboard/StopInbound');
+    showToast(r.message, r.ok, r.plcMessage);
+    await refreshSlots();
+}
+
+function badge(status) { return `<span class="status slot-status status-${status.toLowerCase()}">${status}</span>`; }
+function itemCell(itemId, itemCode) { return itemId ? `<strong>#${itemId}</strong><br><small>${itemCode || ''}</small>` : '—'; }
+
+async function refreshSlots() {
+    const data = await fetch('/Dashboard/Slots').then(r => r.json());
+    updateSummary(data);
+    document.getElementById('slotTableBody').innerHTML = data.map(s => `
+        <tr data-slot="${s.name}">
+            <td><div class="slot-name">${s.name}</div></td><td>Row ${s.rowNo} · Col ${s.colNo}</td>
+            <td class="slot-item">${itemCell(s.itemId, s.itemCode)}</td><td>${badge(s.status)}</td>
+            <td class="slot-sensor">${s.sensorOccupied ? 'Có pallet' : 'Không có pallet'}</td>
+            <td class="slot-request">${s.requestType ?? '—'}</td>
+            <td class="slot-update">${s.lastSensorUpdate ? new Date(s.lastSensorUpdate).toLocaleString('vi-VN') : 'Chưa có dữ liệu'}</td>
+        </tr>`).join('');
+}
+
+function updateSummary(data) {
+    document.getElementById('emptyCount').textContent = data.filter(x => x.status === 'EMPTY').length;
+    document.getElementById('occupiedCount').textContent = data.filter(x => x.status === 'OCCUPIED').length;
+    document.getElementById('requestCount').textContent = data.filter(x => x.status === 'REQUEST').length;
+}
+
+async function refreshHardwareStatus() {
+    try {
+        const status = await fetch('/Dashboard/HardwareStatus').then(r => r.json());
+        document.getElementById('plcStatus').textContent = status.plcMessage;
+        document.getElementById('m202Status').textContent = status.m202 === true ? '1' : status.m202 === false ? '0' : '—';
+        document.getElementById('cameraStatus').textContent = status.cameraMessage;
+        document.getElementById('triggerStatus').textContent = status.triggerState;
+        document.getElementById('hardwareChain').classList.toggle('hardware-online', status.plcConnected && status.cameraConnected);
+    } catch {
+        document.getElementById('plcStatus').textContent = 'Không tải được trạng thái phần cứng.';
+    }
+}
+
+async function testCamera() {
+    const button = document.getElementById('testCameraButton');
+    button.disabled = true;
+    button.textContent = 'Đang chụp...';
+    try {
+        const result = await postJson('/Dashboard/TestCamera');
+        showToast(result.message, result.ok);
+        await refreshHardwareStatus();
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Chụp thử camera';
+    }
+}
+
+const connection = new signalR.HubConnectionBuilder().withUrl('/warehouseHub').withAutomaticReconnect().build();
+connection.on('slotUpdated', data => {
+    const row = document.querySelector(`tr[data-slot="${data.name}"]`);
+    if (!row) return;
+    const statusElement = row.querySelector('.slot-status');
+    statusElement.textContent = data.status;
+    statusElement.className = `status slot-status status-${data.status.toLowerCase()}`;
+    row.querySelector('.slot-sensor').textContent = data.occupied ? 'Có pallet' : 'Không có pallet';
+    row.querySelector('.slot-request').textContent = data.requestType ?? '—';
+    row.querySelector('.slot-item').innerHTML = itemCell(data.itemId, data.itemCode);
+    row.querySelector('.slot-update').textContent = data.lastUpdate ?? 'Chưa có dữ liệu';
+    refreshSlots();
+});
+connection.start().catch(err => console.error('SignalR connection error:', err));
+refreshHardwareStatus();
+setInterval(refreshHardwareStatus, 2000);
+</script>
+}

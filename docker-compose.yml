@@ -1,0 +1,38 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__WarehouseDb: "Server=db,1433;Database=ASRS_Warehouse;User Id=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;"
+    ports:
+      # Expose the web app to devices on the trusted local network.
+      - "0.0.0.0:${WEB_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    # Expose SQL Server only to this PC for local database administration.
+    # Application containers still connect through db:1433 on the Compose network.
+    ports:
+      - "127.0.0.1:${SQL_HOST_PORT:-14330}:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./Database:/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/1433'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mssql_data:

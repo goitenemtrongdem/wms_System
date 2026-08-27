@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Railway runs Linux containers. CloudBuild excludes the Windows-only
+         GigE camera/QR reader and produces a portable ASP.NET Core app. -->
+    <TargetFramework Condition="'$(CloudBuild)' == 'true'">net10.0</TargetFramework>
+    <DefineConstants Condition="'$(CloudBuild)' == 'true'">$(DefineConstants);CLOUD_BUILD</DefineConstants>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseSystemDrawing>true</UseSystemDrawing>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageReference Include="NModbus" Version="3.0.83" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.11" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(CloudBuild)' != 'true'">
+    <Reference Include="MVSDK_Net">
+      <HintPath>D:\mvView\MV Viewer\Development\DOTNET DLL\IMV\DOTNET_4.0\x64\MVSDK_Net.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(CloudBuild)' == 'true'">
+    <Compile Remove="Services\ImvGigECameraService.cs" />
+    <Compile Remove="Services\QrCodeReaderService.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+@model List<MovementHistory>
+@{ ViewData["Title"] = "History"; }
+<div class="page-head"><div><div class="eyebrow">AUDIT TRAIL</div><h1>History</h1><p>Lịch sử nhập hàng và xuất hàng đã hoàn thành.</p></div></div>
+<div class="content-card">
+    <div class="card-title-row"><div><h2>Movement History</h2><p>Theo dõi thời gian, ô kệ và kết quả thao tác.</p></div></div>
+    <div class="table-responsive"><table class="table warehouse-table align-middle">
+        <thead><tr><th>Thời gian</th><th>Loại</th><th>Ô kệ</th><th>Item ID</th><th>Kết quả</th><th>Mô tả</th></tr></thead>
+        <tbody>@foreach(var h in Model){<tr><td>@h.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss")</td><td><span class="movement @h.MovementType.ToLower()">@h.MovementType</span></td><td><strong>@h.Slot?.Name</strong></td><td>@if (h.InfeedItem is not null) { <strong>#@h.InfeedItem.Id</strong><br /><small>@h.InfeedItem.ItemCode</small> } else { <span>—</span> }</td><td>@h.Result</td><td>@h.Description</td></tr>}</tbody>
+    </table></div>
+</div>

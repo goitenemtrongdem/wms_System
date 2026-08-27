@@ -1,0 +1,36 @@
+@model ReportViewModel
+@{ ViewData["Title"] = "Report"; var period = (string)ViewBag.Period; }
+
+<div class="page-head">
+    <div><div class="eyebrow">WAREHOUSE ANALYTICS</div><h1>Report</h1><p>Tổng hợp nhập, xuất và tồn kho từ @Model.From.ToString("dd/MM/yyyy") đến @Model.To.ToString("dd/MM/yyyy").</p></div>
+    <div class="period-tabs">
+        <a class="@(period == "week" ? "active" : "")" asp-route-period="week">Tuần</a>
+        <a class="@(period == "month" ? "active" : "")" asp-route-period="month">Tháng</a>
+        <a class="@(period == "year" ? "active" : "")" asp-route-period="year">Năm</a>
+    </div>
+</div>
+
+<div class="summary-grid">
+    <div class="summary-card"><span>Lượt nhập</span><strong>@Model.InboundMovements</strong></div>
+    <div class="summary-card"><span>Lượt xuất</span><strong>@Model.OutboundMovements</strong></div>
+    <div class="summary-card"><span>Lô đang lưu</span><strong>@Model.StoredLots</strong></div>
+    <div class="summary-card"><span>Tổng số lượng</span><strong>@Model.StoredQuantity</strong></div>
+</div>
+
+<div class="content-card mb-4">
+    <div class="alert alert-warning mb-0"><strong>@Model.ExpiringLots lô</strong> có hạn sử dụng trong 30 ngày tới. Các lệnh xuất sẽ luôn ưu tiên FEFO.</div>
+</div>
+
+<div class="content-card">
+    <div class="card-title-row"><div><h2>Tồn kho theo mặt hàng</h2><p>Các lô đang được liên kết với ô kệ thực tế.</p></div></div>
+    <div class="table-responsive"><table class="table warehouse-table align-middle">
+        <thead><tr><th>Mặt hàng</th><th>Số lô</th><th>Tổng số lượng</th><th>Hạn dùng gần nhất</th></tr></thead>
+        <tbody>
+        @foreach (var row in Model.Products)
+        {
+            <tr><td><strong>@row.ProductName</strong></td><td>@row.LotCount</td><td>@row.Quantity</td><td class="@(row.NearestExpiry.HasValue && row.NearestExpiry.Value <= DateTime.Today.AddDays(30) ? "expiry-soon" : "")">@(row.NearestExpiry?.ToString("dd/MM/yyyy") ?? "—")</td></tr>
+        }
+        @if (!Model.Products.Any()) { <tr><td colspan="4" class="empty-state">Chưa có hàng nào đã được xác nhận vào kệ.</td></tr> }
+        </tbody>
+    </table></div>
+</div>

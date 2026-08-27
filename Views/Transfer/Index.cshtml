@@ -1,0 +1,84 @@
+@model TransferViewModel
+@{ ViewData["Title"] = "Transfer"; }
+
+<div class="page-head">
+    <div><div class="eyebrow">OUTBOUND CONTROL</div><h1>Xuất kho</h1><p>Chọn mặt hàng và số lượng; hệ thống tự phân bổ theo FEFO.</p></div>
+</div>
+
+<div class="outbound-command-card mb-4">
+    <div>
+        <div class="eyebrow text-white-50">TẠO LỆNH XUẤT</div>
+        <h2>Xuất theo tên mặt hàng</h2>
+        <p>Lấy lô có hạn dùng gần nhất trước. Nếu lấy lẻ một lô, phần dư sẽ thành lô chờ nhập lại khi pallet đã ra khỏi kệ.</p>
+    </div>
+    <div class="outbound-form">
+        <input id="productName" placeholder="Tên mặt hàng chính xác" />
+        <input id="quantity" type="number" min="1" placeholder="Số lượng" />
+        <button class="btn btn-light" onclick="createOutboundOrder()">Xuất kho</button>
+    </div>
+</div>
+
+<div class="content-card mb-4">
+    <div class="card-title-row">
+        <div><h2>Tồn kho có thể xuất</h2><p>Danh sách lô thực tế đang nằm trong các ô kệ.</p></div>
+        <form method="get" class="search-box"><input name="search" value="@Model.Search" placeholder="Tìm item, mặt hàng, ô kệ..." /><button class="btn btn-dark">Tìm kiếm</button></form>
+    </div>
+    <div class="table-responsive"><table class="table warehouse-table align-middle">
+        <thead><tr><th>Item ID</th><th>Mặt hàng</th><th>Lô</th><th>SL</th><th>Khối lượng</th><th>Hạn dùng</th><th>Ô kệ</th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.StoredItems)
+        {
+            <tr>
+                <td><strong>#@item.Id</strong><br /><small>@item.ItemCode</small></td>
+                <td><strong>@item.ProductName</strong><br /><small>@item.CompanyName</small></td>
+                <td>@item.BatchNumber</td><td>@item.Quantity</td><td>@(item.WeightKg?.ToString("0.##") ?? "—") kg</td>
+                <td class="@(item.ExpiryDate.HasValue && item.ExpiryDate.Value <= DateTime.Today.AddDays(30) ? "expiry-soon" : "")">@(item.ExpiryDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                <td><span class="slot-name">@item.CurrentSlot?.Name</span></td>
+            </tr>
+        }
+        @if (!Model.StoredItems.Any()) { <tr><td colspan="7" class="empty-state">Không tìm thấy lô phù hợp.</td></tr> }
+        </tbody>
+    </table></div>
+</div>
+
+@if (Model.UnlinkedOccupiedSlots.Any())
+{
+    <div class="content-card mb-4">
+        <h2 class="mb-2">Ô có pallet chưa gán Item ID</h2>
+        <p class="text-muted">Các ô này thuộc dữ liệu cũ; không thể xuất theo FEFO cho đến khi được nhập qua QR.</p>
+        <div class="d-flex flex-wrap gap-2">@foreach (var slot in Model.UnlinkedOccupiedSlots) { <span class="status status-request">@slot.Name</span> }</div>
+    </div>
+}
+
+<div class="content-card">
+    <div class="card-title-row"><div><h2>Lệnh xuất gần đây</h2><p>Theo dõi việc phân bổ và xác nhận pallet rời khỏi kệ.</p></div></div>
+    <div class="table-responsive"><table class="table warehouse-table align-middle">
+        <thead><tr><th>Phiếu</th><th>Mặt hàng</th><th>Yêu cầu</th><th>Lấy thực tế</th><th>Dòng lô</th><th>Trạng thái</th><th>Tạo lúc</th></tr></thead>
+        <tbody>
+        @foreach (var order in Model.RecentOrders)
+        {
+            <tr><td><strong>#@order.Id</strong></td><td>@order.ProductName</td><td>@order.RequestedQuantity</td><td>@order.AllocatedQuantity</td><td>@order.Lines.Count</td><td><span class="status status-@order.Status.ToLower()">@order.Status</span></td><td>@order.RequestedAt.ToString("dd/MM/yyyy HH:mm")</td></tr>
+        }
+        @if (!Model.RecentOrders.Any()) { <tr><td colspan="7" class="empty-state">Chưa có lệnh xuất nào.</td></tr> }
+        </tbody>
+    </table></div>
+</div>
+
+<div id="toastBox" class="toast-box"></div>
+@section Scripts {
+<script>
+async function createOutboundOrder() {
+    const productName = document.getElementById('productName').value.trim();
+    const quantity = Number(document.getElementById('quantity').value);
+    if (!productName || !quantity) { showToast('Hãy nhập tên mặt hàng và số lượng.', false); return; }
+    if (!confirm(`Tạo lệnh xuất ${quantity} sản phẩm "${productName}"?`)) return;
+    const r = await fetch('/Transfer/CreateOutboundOrder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productName, quantity }) }).then(x => x.json());
+    showToast(r.message, r.ok, r.plcMessage);
+    if (r.ok) setTimeout(() => location.reload(), 1200);
+}
+function showToast(message, ok, plcMessage) {
+    document.getElementById('toastBox').innerHTML = `<div class="mini-toast ${ok ? 'ok' : 'bad'}">${message}${plcMessage ? `<br><small>${plcMessage}</small>` : ''}</div>`;
+    setTimeout(() => document.getElementById('toastBox').innerHTML = '', 7000);
+}
+</script>
+}

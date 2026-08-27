@@ -1,0 +1,14 @@
+# Build outputs and editor state
+bin/
+obj/
+artifacts/
+.vs/
+.vscode/
+
+# Local secrets and runtime data
+.env
+appsettings.Development.json
+wwwroot/captures/
+
+# Source control metadata
+.git/
