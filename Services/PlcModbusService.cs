@@ -51,8 +51,8 @@ public class PlcModbusService
         => await PulseAsync(_options.OutboundRequestCoil, "xuất kho", cancellationToken);
 
     /// <summary>
-    /// Sends only a one-shot Modbus request. Motion distance and speed are deliberately
-    /// fixed in PLC ladder logic so a web client cannot alter a physical move.
+    /// Stores the requested positioning count in the configured D-register pair, then
+    /// sends a one-shot M210 request. Speed remains fixed in PLC ladder logic.
     /// </summary>
     public async Task<OperationResult> StartInfeedMotionTestAsync(CancellationToken cancellationToken = default)
     {
@@ -61,18 +61,85 @@ public class PlcModbusService
 
         try
         {
-            var plcMessage = await PulseAsync(
-                _options.InfeedMotionTestRequestCoil,
-                "test nhập hàng 50.000 xung",
-                cancellationToken);
+            var plcMessage = await SendInfeedMotionTestCommandAsync(cancellationToken);
 
             return plcMessage is null
-                ? new OperationResult(true, "Đã gửi lệnh test tới PLC. PLC sẽ chạy 50.000 xung ở tốc độ đặt trong ladder.")
+                ? new OperationResult(true, $"Đã gửi {_options.InfeedMotionTestPulseCount:N0} xung tới PLC. PLC chạy ở tốc độ đặt trong ladder.")
                 : new OperationResult(false, "PLC chưa nhận được lệnh test.", plcMessage);
         }
         finally
         {
             _infeedMotionTestCommandGate.Release();
+        }
+    }
+
+    private async Task<string?> SendInfeedMotionTestCommandAsync(CancellationToken cancellationToken)
+    {
+        if (!_options.InfeedMotionTestRequestCoil.HasValue ||
+            !_options.InfeedMotionTestPulseCountHoldingRegister.HasValue)
+        {
+            const string message = "Chưa gửi PLC: cần cấu hình coil M210 và holding register D100 trong appsettings.json.";
+            _logger.LogWarning("Infeed motion test not sent because its PLC coil/register configuration is incomplete.");
+            return message;
+        }
+
+        if (_options.InfeedMotionTestPulseCount is 0 or > int.MaxValue)
+        {
+            const string message = "Số xung yêu cầu phải nằm trong khoảng 1 đến 2,147,483,647.";
+            _logger.LogWarning("Infeed motion test not sent because pulse count {PulseCount} is invalid.", _options.InfeedMotionTestPulseCount);
+            return message;
+        }
+
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(_options.IpAddress, _options.Port, cancellationToken);
+            var master = new ModbusFactory().CreateMaster(client);
+
+            var pulseCount = _options.InfeedMotionTestPulseCount;
+            var countRegisters = new[]
+            {
+                (ushort)(pulseCount & 0xFFFF),
+                (ushort)(pulseCount >> 16)
+            };
+
+            // With the FX5 default device assignment, holding-register offsets 100/101
+            // map to D100/D101. DDRVI reads this pair as one 32-bit signed count.
+            master.WriteMultipleRegisters(
+                _options.SlaveId,
+                _options.InfeedMotionTestPulseCountHoldingRegister.Value,
+                countRegisters);
+
+            var coilIsOn = false;
+            string? resetError = null;
+            try
+            {
+                master.WriteSingleCoil(_options.SlaveId, _options.InfeedMotionTestRequestCoil.Value, true);
+                coilIsOn = true;
+                await Task.Delay(_options.CommandPulseMilliseconds, CancellationToken.None);
+            }
+            finally
+            {
+                if (coilIsOn)
+                {
+                    try
+                    {
+                        master.WriteSingleCoil(_options.SlaveId, _options.InfeedMotionTestRequestCoil.Value, false);
+                    }
+                    catch (Exception resetException)
+                    {
+                        _logger.LogError(resetException, "Could not reset PLC infeed motion test coil.");
+                        resetError = $"PLC command coil could not be reset: {resetException.Message}";
+                    }
+                }
+            }
+
+            return resetError;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not send PLC infeed motion test command.");
+            return $"Không gửi được PLC: {ex.Message}";
         }
     }
 

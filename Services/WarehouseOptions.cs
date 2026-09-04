@@ -16,9 +16,12 @@ public class PlcOptions
 
     /// <summary>
     /// Dedicated, one-shot commissioning request. The WMS writes M210 (coil 8402)
-    /// for CommandPulseMilliseconds; the PLC owns the 50,000-pulse positioning move.
+    /// for CommandPulseMilliseconds after storing the requested pulse count in a
+    /// pair of holding registers mapped to PLC D registers.
     /// </summary>
     public ushort? InfeedMotionTestRequestCoil { get; set; }
+    public ushort? InfeedMotionTestPulseCountHoldingRegister { get; set; }
+    public uint InfeedMotionTestPulseCount { get; set; } = 50_000;
     public int CommandPulseMilliseconds { get; set; } = 500;
 }
 
